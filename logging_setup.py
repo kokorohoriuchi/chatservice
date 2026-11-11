@@ -1,9 +1,4 @@
-"""Per-process file logging.
-
-Every process logs its important events to its own file under the configured
-directory, so a run can be inspected afterwards without a central collector.
-This module is shared infrastructure rather than one of the four work areas.
-"""
+"""Per-process file logging."""
 
 from __future__ import annotations
 

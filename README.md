@@ -44,7 +44,7 @@ uv run mypy .
 ├── tests/                # Tests
 ├── docs/
 │   ├── architecture.md   # Diagram, message lifecycle, known limitations
-│   └── responsibilities.md  # The four-person work division
+├── logging_setup.py      # Per process logging setup
 ├── config.py             # Cluster configuration schema and loader
 └── config.example.json   # Example three-node localhost topology
 ```
