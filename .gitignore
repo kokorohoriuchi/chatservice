@@ -58,6 +58,9 @@ cover/
 
 # Django stuff:
 *.log
+
+# Local per-process logs
+logs/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -100,6 +103,9 @@ ipython_config.py
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
 # uv.lock
+
+# Local cluster topology. Copy config.example.json to config.json and edit it.
+config.json
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
