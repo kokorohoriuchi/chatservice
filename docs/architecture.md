@@ -12,7 +12,7 @@ flowchart TB
         C1["Chat client"]
         CS1["Chat server<br/>chat1"]
         R1["Raft node<br/>node1"]
-        C1 -->|"TCP :9001"| CS1
+        C1 -->|"WS :9001"| CS1
         CS1 <-->|"TCP chat API :8001"| R1
     end
 
@@ -20,7 +20,7 @@ flowchart TB
         C2["Chat client"]
         CS2["Chat server<br/>chat2"]
         R2["Raft node<br/>node2"]
-        C2 -->|"TCP :9002"| CS2
+        C2 -->|"WS :9002"| CS2
         CS2 <-->|"TCP chat API :8002"| R2
     end
 
@@ -28,13 +28,13 @@ flowchart TB
         C3["Chat client"]
         CS3["Chat server<br/>chat3"]
         R3["Raft node<br/>node3"]
-        C3 -->|"TCP :9003"| CS3
+        C3 -->|"WS :9003"| CS3
         CS3 <-->|"TCP chat API :8003"| R3
     end
 
-    R1 <-->|"TCP peer :7001"| R2
-    R2 <-->|"TCP peer :7002"| R3
-    R1 <-->|"TCP peer :7003"| R3
+    R1 <-->|"RPC peer :7001"| R2
+    R2 <-->|"RPC peer :7002"| R3
+    R1 <-->|"RPC peer :7003"| R3
 ```
 
 Three connection types exist.

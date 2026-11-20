@@ -1,8 +1,7 @@
 """Shared Raft types.
 
 This module is the frozen contract between all four work areas. Every other
-module imports its message and state types from here, so a change to this file
-requires agreement from all four people.
+module imports its message and state types from here.
 """
 
 from __future__ import annotations

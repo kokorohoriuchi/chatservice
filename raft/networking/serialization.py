@@ -1,11 +1,7 @@
-"""Wire format for every TCP connection in the project.
+"""Wire format for every connection in the project.
 
 Messages are newline-delimited JSON. `json.dumps` escapes any newline inside a
-string, so a newline is an unambiguous message boundary and no length prefix is
-needed.
-
-The helpers here never inspect Command.payload, so this module has no dependency
-on the chat application.
+string, so a newline is an message boundary.
 """
 
 from __future__ import annotations
@@ -17,10 +13,14 @@ from enum import Enum
 from typing import Any
 
 from raft.types import (
+    AppendEntries,
+    AppendEntriesReply,
     Command,
     LogEntry,
     NodeId,
     ProposalResult,
+    RequestVote,
+    RequestVoteReply,
 )
 
 
@@ -36,7 +36,6 @@ class PeerMessageType(Enum):
 
 
 def to_dict(value: Any) -> Any:
-    """Convert a dataclass, enum, or container of them into plain JSON data."""
     if isinstance(value, dict):
         return {key: to_dict(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -62,6 +61,7 @@ async def read_message(reader: asyncio.StreamReader) -> dict[str, Any] | None:
     decoded: dict[str, Any] = json.loads(line)
     return decoded
 
+
 def command_from_dict(data: dict[str, Any]) -> Command:
     """Rebuild a Command from a decoded message payload."""
     return Command.from_dict(data)
@@ -82,3 +82,39 @@ def proposal_result_from_dict(data: dict[str, Any]) -> ProposalResult:
         leader_id=NodeId(leader_id) if leader_id is not None else None,
         error=data.get("error"),
     )
+
+
+def append_entries_from_dict(data: dict[str, Any]) -> AppendEntries:
+    """Rebuild an AppendEntries from a decoded message payload."""
+    return AppendEntries(
+        term=data["term"],
+        leader_id=NodeId(data["leader_id"]),
+        prev_log_index=data["prev_log_index"],
+        prev_log_term=data["prev_log_term"],
+        entries=[LogEntry.from_dict(entry) for entry in data.get("entries", [])],
+        leader_commit=data.get("leader_commit", 0),
+    )
+
+
+def append_entries_reply_from_dict(data: dict[str, Any]) -> AppendEntriesReply:
+    """Rebuild an AppendEntriesReply from a decoded message payload."""
+    return AppendEntriesReply(
+        term=data["term"],
+        success=data["success"],
+        match_index=data["match_index"],
+    )
+
+
+def request_vote_from_dict(data: dict[str, Any]) -> RequestVote:
+    """Rebuild a RequestVote from a decoded message payload."""
+    return RequestVote(
+        term=data["term"],
+        candidate_id=NodeId(data["candidate_id"]),
+        last_log_index=data["last_log_index"],
+        last_log_term=data["last_log_term"],
+    )
+
+
+def request_vote_reply_from_dict(data: dict[str, Any]) -> RequestVoteReply:
+    """Rebuild a RequestVoteReply from a decoded message payload."""
+    return RequestVoteReply(term=data["term"], vote_granted=data["vote_granted"])

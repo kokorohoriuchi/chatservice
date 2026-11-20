@@ -39,7 +39,7 @@ uv run mypy .
 │   ├── types.py          # Shared Raft types, the frozen contract
 │   ├── election.py       # Leader election and failure detection
 │   ├── replication.py    # Log replication and commit tracking
-│   └── networking/       # TCP transport, serialization, and the chat API
+│   └── networking/       # Transport, serialization, and the chat API
 ├── client/               # Interactive terminal chat client
 ├── tests/                # Tests
 ├── docs/

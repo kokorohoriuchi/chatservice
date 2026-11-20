@@ -122,9 +122,7 @@ def load_config(path: str | Path) -> ClusterConfig:
     raft_nodes = _parse_raft_nodes(raw.get("raft_nodes"))
     chat_servers = _parse_chat_servers(raw.get("chat_servers"), raft_nodes)
     logging_config = _parse_logging(raw.get("logging"))
-    return ClusterConfig(
-        raft_nodes=raft_nodes, chat_servers=chat_servers, logging=logging_config
-    )
+    return ClusterConfig(raft_nodes=raft_nodes, chat_servers=chat_servers, logging=logging_config)
 
 
 def _parse_raft_nodes(raw: Any) -> dict[NodeId, RaftNodeConfig]:
@@ -159,9 +157,7 @@ def _parse_chat_servers(
             raise ConfigError(f'chat server "{key}" must be a JSON object')
         raft_node_id = NodeId(_require_str(value, "raft_node", f'chat server "{key}"'))
         if raft_node_id not in raft_nodes:
-            raise ConfigError(
-                f'chat server "{key}" refers to unknown raft node "{raft_node_id}"'
-            )
+            raise ConfigError(f'chat server "{key}" refers to unknown raft node "{raft_node_id}"')
         servers[key] = ChatServerConfig(
             server_id=key,
             host=_require_str(value, "host", f'chat server "{key}"'),

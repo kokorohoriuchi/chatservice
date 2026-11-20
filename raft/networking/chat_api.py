@@ -1,21 +1,18 @@
-"""The local chat-to-Raft API.
-
-This is the TCP interface between a chat server and its local Raft node. The
-chat server sends PROPOSE and receives PROPOSAL_RESULT as the reply. The Raft
-node pushes COMMITTED_ENTRY to every connected chat server without being asked.
-"""
-
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from raft.networking import serialization
 from raft.types import Command, LogEntry
 
 if TYPE_CHECKING:
     from raft.node import RaftNode
+
+logger = logging.getLogger(__name__)
 
 
 class ChatRaftMessageType(Enum):
@@ -41,13 +38,9 @@ class CommittedEntryNotification:
 
 
 class ChatApiServer:
-    """Serves the local chat server over TCP and pushes committed entries to it.
-
-    Constructed by RaftNode.start.
-    """
+    """Serves the chat server and pushes committed entries to it."""
 
     def __init__(self, host: str, port: int, node: RaftNode) -> None:
-        """Store the bind address and the node whose events will be pushed."""
         self.host = host
         self.port = port
         self.node = node
@@ -55,42 +48,86 @@ class ChatApiServer:
         self.connections: set[asyncio.StreamWriter] = set()
 
     async def start(self) -> None:
-        """Bind the listening socket and begin accepting chat server connections.
-
-        Called by RaftNode.start.
-        """
-        raise NotImplementedError
+        """Start listening for connections from chat servers."""
+        self.server = await asyncio.start_server(self._handle_connection, self.host, self.port)
+        logger.info("chat server listening on %s:%d", self.host, self.port)
 
     async def stop(self) -> None:
-        """Close every chat server connection and the listening socket.
+        """Stop accepting connections and close every open chat server connection."""
+        
+        logger.info("stopping chat server on %s:%d", self.host, self.port)
+        for writer in list(self.connections):
+            writer.close()
+        self.connections.clear()
 
-        Called by RaftNode.stop.
-        """
-        raise NotImplementedError
+        if self.server is None:
+            return
+        self.server.close()
+        await self.server.wait_closed()
+        self.server = None
 
     async def notify_committed_entry(self, entry: LogEntry) -> None:
-        """Push a COMMITTED_ENTRY to every connected chat server.
-
-        Called by replication.apply_committed_entries. Reaches
-        ChatServer.handle_committed_entry.
-        """
-        raise NotImplementedError
+        """Disseminate a COMMITTED_ENTRY to every connected chat server."""
+        await self._disseminate(
+            ChatRaftMessageType.COMMITTED_ENTRY,
+            {"entry": entry},
+        )
 
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        """Register a chat server and serve its proposals until it disconnects.
+        """Handler for connections with chat servers."""
 
-        Use serialization.read_message and write_message. Dispatch PROPOSE to
-        RaftNode.propose and reply with PROPOSAL_RESULT.
-        """
-        raise NotImplementedError
+        peer = writer.get_extra_info("peername")
+        logger.info("chat server connected from %s", peer)
+        self.connections.add(writer)
+        try:
+            while True:
+                message = await serialization.read_message(reader)
+                if message is None:
+                    logger.info("chat server %s disconnected", peer)
+                    return
+                if message.get("type") != ChatRaftMessageType.PROPOSE.value:
+                    logger.warning("chat server %s sent an unsupported message", peer)
+                    continue
+                payload = message.get("payload")
+                if not isinstance(payload, dict):
+                    logger.warning("chat server %s sent a malformed payload", peer)
+                    continue
+                logger.debug("handling PROPOSE from chat server %s", peer)
+                command = serialization.command_from_dict(payload["command"])
+                result = await self.node.propose(command)
+                await serialization.write_message(
+                    writer,
+                    {
+                        "type": ChatRaftMessageType.PROPOSAL_RESULT.value,
+                        "payload": result,
+                    },
+                )
+        except Exception as exc:
+            logger.exception("error handling chat server connection from %s: %s", peer, exc)
+            return
+        finally:
+            self.connections.discard(writer)
+            writer.close()
 
-    async def _broadcast(
+    async def _disseminate(
         self, message_type: ChatRaftMessageType, payload: dict[str, object]
     ) -> None:
-        """Write one message to every connected chat server.
-
-        Called by notify_committed_entry.
-        """
-        raise NotImplementedError
+        """Write one message to every connected chat server."""
+        message = {"type": message_type.value, "payload": payload}
+        logger.debug(
+            "disseminating %s to %d chat server(s)", message_type.value, len(self.connections)
+        )
+        for writer in list(self.connections):
+            if writer.is_closing():
+                self.connections.discard(writer)
+                continue
+            try:
+                await serialization.write_message(writer, message)
+            except Exception as exc:
+                logger.warning(
+                    "error disseminating %s to a chat server: %s", message_type.value, exc
+                )
+                self.connections.discard(writer)
+                writer.close()
