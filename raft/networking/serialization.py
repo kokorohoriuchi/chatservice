@@ -16,6 +16,8 @@ from raft.types import (
     AppendEntries,
     AppendEntriesReply,
     Command,
+    HistoryReply,
+    HistoryRequest,
     LogEntry,
     NodeId,
     ProposalResult,
@@ -118,3 +120,18 @@ def request_vote_from_dict(data: dict[str, Any]) -> RequestVote:
 def request_vote_reply_from_dict(data: dict[str, Any]) -> RequestVoteReply:
     """Rebuild a RequestVoteReply from a decoded message payload."""
     return RequestVoteReply(term=data["term"], vote_granted=data["vote_granted"])
+
+
+def history_request_from_dict(data: dict[str, Any]) -> HistoryRequest:
+    """Rebuild a HistoryRequest from a decoded message payload."""
+    return HistoryRequest(
+        from_index=data.get("from_index", 1),
+        to_index=data.get("to_index"),
+    )
+
+
+def history_reply_from_dict(data: dict[str, Any]) -> HistoryReply:
+    """Rebuild a HistoryReply from a decoded message payload."""
+    return HistoryReply(
+        entries=[LogEntry.from_dict(entry) for entry in data.get("entries", [])],
+    )

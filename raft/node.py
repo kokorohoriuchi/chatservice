@@ -170,3 +170,9 @@ class RaftNode:
     async def apply_committed_entries(self) -> None:
         """Apply newly committed entries and notify the local chat server."""
         await replication.apply_committed_entries(self)
+
+    def committed_entries(
+        self, from_index: int = 1, to_index: int | None = None
+    ) -> list[LogEntry]:
+        """Return the committed entries in [from_index, to_index] for a history request."""
+        return replication.committed_entries(self, from_index, to_index)

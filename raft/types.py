@@ -113,6 +113,25 @@ class ProposalResult:
 
 
 @dataclass(frozen=True)
+class HistoryRequest:
+    """A chat server's request for committed log entries.
+
+    from_index is 1-based and inclusive. to_index defaults to the node's
+    commit_index, so an uncommitted entry is never returned.
+    """
+
+    from_index: int = 1
+    to_index: int | None = None
+
+
+@dataclass(frozen=True)
+class HistoryReply:
+    """The committed entries answering a HistoryRequest."""
+
+    entries: list[LogEntry] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class PeerAddress:
     """The network location of one Raft peer."""
 

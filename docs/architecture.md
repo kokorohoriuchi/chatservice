@@ -42,7 +42,7 @@ Three connection types exist.
 1. **Chat client to chat server.** A plain request and response protocol. The
    client sends SEND_MESSAGE. The server sends MESSAGE or ERROR.
 2. **Chat server to its local Raft node.** The chat API. The chat server sends
-   PROPOSE and receives PROPOSAL_RESULT as the reply. The Raft node pushes
+   PROPOSE_REQUEST and receives PROPOSAL_RESULT as the reply. The Raft node pushes
    COMMITTED_ENTRY without being asked.
 3. **Raft node to Raft node.** The peer protocol. REQUEST_VOTE,
    REQUEST_VOTE_REPLY, APPEND_ENTRIES, APPEND_ENTRIES_REPLY, and the two
@@ -59,8 +59,8 @@ The path a chat message takes from one client to every other client.
 2. `ChatServer.handle_client_message` converts it with `message.to_command` and
    calls `ChatServer.propose_message`.
 3. `ChatServer.propose_message` calls `RaftClient.propose`, which sends a
-   PROPOSE over the chat API.
-4. `ChatApiServer` receives the PROPOSE and calls `RaftNode.propose`.
+   PROPOSE_REQUEST over the chat API.
+4. `ChatApiServer` receives the PROPOSE_REQUEST and calls `RaftNode.propose`.
 5. `RaftNode.propose` checks its role.
    - If it is the **leader**, it appends the entry to its log and starts
      replication.
@@ -102,7 +102,7 @@ sequenceDiagram
 
     C1->>S1: SEND_MESSAGE
     S1->>RC: propose(Command)
-    RC->>N1: PROPOSE
+    RC->>N1: PROPOSE_REQUEST
     N1->>N1: append to log
     N1->>N2: APPEND_ENTRIES
     N2->>N2: append to log
@@ -133,7 +133,7 @@ sequenceDiagram
 
     C1->>S1: SEND_MESSAGE
     S1->>RC: propose(Command)
-    RC->>N2: PROPOSE
+    RC->>N2: PROPOSE_REQUEST
     N2->>N2: role is FOLLOWER
     N2->>N1: FORWARD_PROPOSAL
     N1->>N1: append to log

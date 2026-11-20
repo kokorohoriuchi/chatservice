@@ -68,6 +68,15 @@ class ChatServer:
         """
         raise NotImplementedError
 
+    async def request_history(
+        self, client_id: str, from_index: int = 1, to_index: int | None = None
+    ) -> None:
+        """Serve a client's history request from the local Raft node.
+
+        Call RaftClient.request_history and send the entries to the client.
+        """
+        raise NotImplementedError
+
     async def broadcast_message(self, message: ChatMessage) -> None:
         """Send a committed message to every connected chat client.
 

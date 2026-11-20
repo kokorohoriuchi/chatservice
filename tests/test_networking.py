@@ -23,6 +23,8 @@ from raft.types import (
     AppendEntries,
     AppendEntriesReply,
     Command,
+    HistoryReply,
+    HistoryRequest,
     LogEntry,
     NodeId,
     PeerAddress,
@@ -49,10 +51,12 @@ class FakeNode:
         self.request_vote_reply = RequestVoteReply(term=1, vote_granted=True)
         self.append_entries_reply = AppendEntriesReply(term=1, success=True, match_index=0)
         self.proposal_result = ProposalResult(accepted=True, index=1, term=1)
+        self.history_entries: list[LogEntry] = []
         self.received_votes: list[RequestVote] = []
         self.received_appends: list[AppendEntries] = []
         self.received_forwarded: list[Command] = []
         self.received_proposals: list[Command] = []
+        self.received_history: list[tuple[int, int | None]] = []
 
     async def handle_request_vote(self, request: RequestVote) -> RequestVoteReply:
         """Record the request and return the canned vote reply."""
@@ -73,6 +77,11 @@ class FakeNode:
         """Record the command and return the canned proposal result."""
         self.received_proposals.append(command)
         return self.proposal_result
+
+    def committed_entries(self, from_index: int = 1, to_index: int | None = None) -> list[LogEntry]:
+        """Record the range and return the canned committed entries."""
+        self.received_history.append((from_index, to_index))
+        return self.history_entries
 
 
 async def exchange(
@@ -145,6 +154,22 @@ async def wait_for_connections(server: ChatApiServer | PeerServer, count: int) -
         (
             ProposalResult(accepted=True, index=2, term=3, leader_id=NodeId("n1"), error=None),
             serialization.proposal_result_from_dict,
+        ),
+        (
+            HistoryRequest(from_index=2, to_index=5),
+            serialization.history_request_from_dict,
+        ),
+        (
+            HistoryReply(
+                entries=[
+                    LogEntry(
+                        index=1,
+                        term=1,
+                        command=Command(type="POST_MESSAGE", payload={"text": "hi"}),
+                    )
+                ]
+            ),
+            serialization.history_reply_from_dict,
         ),
     ],
 )
@@ -265,7 +290,7 @@ async def test_peer_client_sends_every_rpc_type() -> None:
 
 
 async def test_chat_api_serves_propose() -> None:
-    """A PROPOSE reaches node.propose and its result comes back as PROPOSAL_RESULT."""
+    """A PROPOSE_REQUEST reaches node.propose and its result comes back as PROPOSAL_RESULT."""
     node = FakeNode()
     server = ChatApiServer("127.0.0.1", free_port(), cast("RaftNode", node))
     await server.start()
@@ -274,7 +299,7 @@ async def test_chat_api_serves_propose() -> None:
         command = Command(type="POST_MESSAGE", payload={"text": "hi"})
         await serialization.write_message(
             writer,
-            {"type": "PROPOSE", "payload": {"command": serialization.to_dict(command)}},
+            {"type": "PROPOSE_REQUEST", "payload": {"command": serialization.to_dict(command)}},
         )
         reply = await serialization.read_message(reader)
         assert reply is not None
@@ -302,6 +327,34 @@ async def test_chat_api_pushes_committed_entries() -> None:
         assert message is not None
         assert message["type"] == "COMMITTED_ENTRY"
         assert serialization.entry_from_dict(message["payload"]["entry"]) == entry
+    finally:
+        writer.close()
+        await server.stop()
+
+
+async def test_chat_api_serves_history_request() -> None:
+    """A HISTORY_REQUEST reaches node.committed_entries and its entries come back."""
+    node = FakeNode()
+    node.history_entries = [
+        LogEntry(index=1, term=1, command=Command(type="POST_MESSAGE", payload={"text": "a"})),
+        LogEntry(index=2, term=1, command=Command(type="POST_MESSAGE", payload={"text": "b"})),
+    ]
+    server = ChatApiServer("127.0.0.1", free_port(), cast("RaftNode", node))
+    await server.start()
+    reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
+    try:
+        request = HistoryRequest(from_index=1, to_index=None)
+        await serialization.write_message(
+            writer,
+            {"type": "HISTORY_REQUEST", "payload": serialization.to_dict(request)},
+        )
+        reply = await serialization.read_message(reader)
+        assert reply is not None
+        assert reply["type"] == "HISTORY_REPLY"
+        assert serialization.history_reply_from_dict(reply["payload"]) == HistoryReply(
+            entries=node.history_entries
+        )
+        assert node.received_history == [(1, None)]
     finally:
         writer.close()
         await server.stop()

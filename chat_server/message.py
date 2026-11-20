@@ -33,12 +33,14 @@ class ClientMessageType(Enum):
     """The kinds of message a chat client sends to a chat server."""
 
     SEND_MESSAGE = "SEND_MESSAGE"
+    GET_HISTORY = "GET_HISTORY"
 
 
 class ServerMessageType(Enum):
     """The kinds of message a chat server sends to a chat client."""
 
     MESSAGE = "MESSAGE"
+    HISTORY = "HISTORY"
     ERROR = "ERROR"
 
 

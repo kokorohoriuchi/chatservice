@@ -41,6 +41,15 @@ class ChatClient:
         """
         raise NotImplementedError
 
+    async def request_history(
+        self, from_index: int = 1, to_index: int | None = None
+    ) -> None:
+        """Send a GET_HISTORY to the chat server.
+
+        Use message.encode_client_message. The server answers with HISTORY.
+        """
+        raise NotImplementedError
+
     async def listen(self) -> None:
         """Read server messages and print them until the connection closes.
 

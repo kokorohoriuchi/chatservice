@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
-from raft.types import Command, LogEntry, ProposalResult
+from raft.types import Command, HistoryReply, LogEntry, ProposalResult
 
 CommittedEntryHandler = Callable[[LogEntry], Awaitable[None]]
 
@@ -36,6 +36,7 @@ class RaftClient:
         self.writer: asyncio.StreamWriter | None = None
         self.listen_task: asyncio.Task[None] | None = None
         self.pending_proposal: asyncio.Future[ProposalResult] | None = None
+        self.pending_history: asyncio.Future[HistoryReply] | None = None
         self.committed_entry_handler: CommittedEntryHandler | None = None
 
     async def connect(self) -> None:
@@ -47,7 +48,7 @@ class RaftClient:
         raise NotImplementedError
 
     async def propose(self, command: Command) -> ProposalResult:
-        """Send a PROPOSE and await the matching PROPOSAL_RESULT.
+        """Send a PROPOSE_REQUEST and await the matching PROPOSAL_RESULT.
 
         A missing connection, a write error, or a silent Raft node all come back
         as a rejected result rather than an exception, so the chat server can
@@ -65,6 +66,16 @@ class RaftClient:
         """
         raise NotImplementedError
 
+    async def request_history(
+        self, from_index: int = 1, to_index: int | None = None
+    ) -> HistoryReply:
+        """Send a HISTORY_REQUEST and await the matching HISTORY_REPLY.
+
+        Write the request, then await self.pending_history, which _listen
+        resolves. Called by ChatServer.request_history.
+        """
+        raise NotImplementedError
+
     async def close(self) -> None:
         """Cancel the listener and close the connection.
 
@@ -76,7 +87,9 @@ class RaftClient:
         """Read pushed messages and resolve the pending proposal when its reply arrives.
 
         Use serialization.read_message. Dispatch COMMITTED_ENTRY to
-        self.committed_entry_handler and PROPOSAL_RESULT to self.pending_proposal.
-        (serialization.proposal_result_from_dict, serialization.entry_from_dict())
+        self.committed_entry_handler, PROPOSAL_RESULT to self.pending_proposal,
+        and HISTORY_REPLY to self.pending_history.
+        (serialization.proposal_result_from_dict, serialization.entry_from_dict,
+        serialization.history_reply_from_dict)
         """
         raise NotImplementedError
