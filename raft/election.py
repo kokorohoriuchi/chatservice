@@ -13,12 +13,17 @@ message itself. The role transitions below start and stop it.
 from __future__ import annotations
 
 import asyncio
+import logging
+import random
 from typing import TYPE_CHECKING
 
+from raft import replication
 from raft.types import NodeId, RequestVote, RequestVoteReply, Role
 
 if TYPE_CHECKING:
     from raft.node import RaftNode
+
+logger = logging.getLogger(__name__)
 
 
 async def start_election(node: RaftNode) -> None:
@@ -122,7 +127,25 @@ async def reset_election_timer(node: RaftNode) -> None:
     Schedule on_election_timeout as the timer callback. Called by
     replication.handle_append_entries and by the role transitions here.
     """
-    raise NotImplementedError
+    _cancel_task(node.election_timer_task)
+    node.election_timer_task = None
+
+    # A stopped node never starts elections
+    if not node.running:
+        return
+
+    # Randomly choose a timeout in the configured range, then schedule a
+    # callback to on_election_timeout after that delay.
+    low, high = node.config.election_timeout_range
+    timeout = random.uniform(low, high)
+
+    async def countdown() -> None:
+        # Sleep for the timeout, then call on_election_timeout.
+        await asyncio.sleep(timeout)
+        await on_election_timeout(node)
+
+    # Schedule the countdown task and store it on the node so it can be cancelled later.
+    node.election_timer_task = asyncio.create_task(countdown())
 
 
 async def on_election_timeout(node: RaftNode) -> None:
@@ -130,42 +153,103 @@ async def on_election_timeout(node: RaftNode) -> None:
 
     Call start_election.
     """
-    raise NotImplementedError
+    # A leader never times out, and a stopped node never starts elections.
+    if not node.running or node.role is Role.LEADER:
+        return
+    # Log the timeout and start a new election.
+    logger.info("node %s election timeout in term %d", node.node_id, node.current_term)
+    await start_election(node)
 
 
 async def become_follower(node: RaftNode, term: int) -> None:
     """Step down to follower in the given term and stop any heartbeat task.
 
-    Call replication.stop_heartbeat. Called by replication.py
-    whenever a higher term is observed.
+    Call stop_heartbeat. Called by replication.py whenever a higher term
+    is observed.
     """
-    raise NotImplementedError
+    if term > node.current_term:
+        node.current_term = term
+        node.voted_for = None
+        node.leader_id = None
+    was_leader = node.role is Role.LEADER
+    node.role = Role.FOLLOWER
+    node.votes_received = set()
+    await stop_heartbeat(node)
+    # A leader had no election timer running, so start one now.
+    if was_leader or node.election_timer_task is None:
+        await reset_election_timer(node)
 
 
 async def become_candidate(node: RaftNode) -> None:
     """Increment the term, vote for self, and reset the election timer.
 
-    Call replication.stop_heartbeat and reset_election_timer.
+    Call stop_heartbeat and reset_election_timer.
     """
-    raise NotImplementedError
+    await stop_heartbeat(node)
+    node.role = Role.CANDIDATE
+    node.current_term += 1
+    node.voted_for = node.node_id
+    node.leader_id = None
+    node.votes_received = {node.node_id}
+    logger.info("node %s became candidate in term %d", node.node_id, node.current_term)
+    # If this election splits, the next timeout starts another one.
+    await reset_election_timer(node)
 
 
 async def become_leader(node: RaftNode) -> None:
     """Initialize leader bookkeeping and start sending heartbeats.
 
-    Call replication.start_heartbeat.
+    Call start_heartbeat.
     """
-    raise NotImplementedError
+    node.role = Role.LEADER
+    node.leader_id = node.node_id
+    node.votes_received = set()
+    # Leaders do not time out; heartbeats keep followers from doing so.
+    _cancel_task(node.election_timer_task)
+    node.election_timer_task = None
+    replication.init_leader_state(node)
+    logger.info("node %s became leader in term %d", node.node_id, node.current_term)
+    await start_heartbeat(node)
+
 
 async def start_heartbeat(node: RaftNode) -> None:
     """Start the leader's periodic heartbeat task.
-    
+
     Interval is defined by node.config.heartbeat_interval
     """
+    await stop_heartbeat(node)
+    term = node.current_term
 
-    raise NotImplementedError
+    async def heartbeat_loop() -> None:
+        # Stop as soon as this node is no longer the leader of this term.
+        while node.running and node.role is Role.LEADER and node.current_term == term:
+            await replication.broadcast_append_entries(node)
+            await asyncio.sleep(node.config.heartbeat_interval)
+
+    node.heartbeat_task = asyncio.create_task(heartbeat_loop())
 
 
 async def stop_heartbeat(node: RaftNode) -> None:
     """Stop the leader's periodic heartbeat task."""
-    raise NotImplementedError
+    _cancel_task(node.heartbeat_task)
+    node.heartbeat_task = None
+
+
+def _cancel_task(task: asyncio.Task[None] | None) -> None:
+    """Cancel a background task, unless it is the task running this code.
+
+    The election timer task runs the election itself, and the heartbeat task
+    may step down on a higher-term reply. Cancelling the current task would
+    abort that work halfway, so it is left to finish; it ends on its own.
+    """
+    if task is None or task.done():
+        return
+
+    # If the task is not the current task, cancel it. If it is the current task,
+    # let it finish; it will end on its own.
+    try:
+        current = asyncio.current_task()
+    except RuntimeError:
+        current = None
+    if task is not current:
+        task.cancel()
