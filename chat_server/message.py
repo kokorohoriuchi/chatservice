@@ -7,7 +7,9 @@ chat server.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import asyncio
+import json
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -32,16 +34,29 @@ class ChatMessage:
 class ClientMessageType(Enum):
     """The kinds of message a chat client sends to a chat server."""
 
-    SEND_MESSAGE = "SEND_MESSAGE"
-    GET_HISTORY = "GET_HISTORY"
+    JOIN = "JOIN"                   # When client starts a connection with server 
+    SEND_MESSAGE = "SEND_MESSAGE"   # When user submits a chat message
 
 
 class ServerMessageType(Enum):
     """The kinds of message a chat server sends to a chat client."""
 
-    MESSAGE = "MESSAGE"
-    HISTORY = "HISTORY"
+    NEW_MESSAGE = "NEW_MESSAGE" # Pushing new chat message to client
+    JOIN_REPLY = "JOIN_REPLY"   # Reply newly joined client with chat history 
+    SEND_MESSAGE_REPLY = "SEND_MESSAGE_REPLY"
     ERROR = "ERROR"
+    
+    
+def to_dict(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: to_dict(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [to_dict(item) for item in value]
+    if isinstance(value, Enum):
+        return value.value
+    if hasattr(value, "__dataclass_fields__"):
+        return {key: to_dict(item) for key, item in asdict(value).items()}
+    return value
 
 
 @dataclass(frozen=True)
@@ -49,6 +64,7 @@ class ClientMessage:
     """An envelope for anything a chat client sends."""
 
     type: ClientMessageType
+    sender: str
     payload: dict[str, Any] = field(default_factory=dict)
 
 
@@ -62,12 +78,20 @@ class ServerMessage:
 
 def chat_message_to_dict(message: ChatMessage) -> dict[str, Any]:
     """Convert a ChatMessage into a JSON-serializable dictionary."""
-    raise NotImplementedError
+    return {
+        "sender": message.sender,
+        "text": message.text,
+        "log_index": message.log_index
+    }
 
 
 def chat_message_from_dict(data: dict[str, Any]) -> ChatMessage:
     """Rebuild a ChatMessage from a dictionary produced by chat_message_to_dict."""
-    raise NotImplementedError
+    return ChatMessage(
+        sender=data["sender"],
+        text=data["text"],
+        log_index=data["log_index"]
+    )
 
 
 def to_command(client_message: ClientMessage) -> Command:
@@ -76,7 +100,13 @@ def to_command(client_message: ClientMessage) -> Command:
     Set Command.type from CommandType.POST_MESSAGE.value and put sender, text,
     in the payload. Called by ChatServer.handle_client_message.
     """
-    raise NotImplementedError
+    return Command(
+        type=CommandType.POST_MESSAGE,
+        payload={
+            "sender": client_message.sender,
+            "text": client_message.payload["text"],
+        }
+    )
 
 
 def from_command(command: Command, log_index: int) -> ChatMessage:
@@ -84,24 +114,58 @@ def from_command(command: Command, log_index: int) -> ChatMessage:
 
     Read the payload written by to_command. Called by ChatStateMachine.apply.
     """
-    raise NotImplementedError
+    payload = command.payload
+    return ChatMessage(
+        sender=payload["sender"],
+        text=payload["text"],
+        log_index=log_index
+    )
 
 
 def encode_client_message(message: ClientMessage) -> dict[str, Any]:
     """Convert a ClientMessage into a JSON-serializable dictionary."""
-    raise NotImplementedError
+    return {
+        "type": message.type,
+        "sender": message.sender,
+        "payload": message.payload
+    }
 
 
 def decode_client_message(data: dict[str, Any]) -> ClientMessage:
     """Rebuild a ClientMessage from a dictionary produced by encode_client_message."""
-    raise NotImplementedError
+    return ClientMessage(
+        type=ClientMessageType(data["type"]),
+        sender=data["sender"],
+        payload=data["payload"]
+    )
 
 
 def encode_server_message(message: ServerMessage) -> dict[str, Any]:
     """Convert a ServerMessage into a JSON-serializable dictionary."""
-    raise NotImplementedError
+    return {
+        "type": message.type,
+        "payload": message.payload
+    }
 
 
 def decode_server_message(data: dict[str, Any]) -> ServerMessage:
     """Rebuild a ServerMessage from a dictionary produced by encode_server_message."""
-    raise NotImplementedError
+    return ServerMessage(
+        type=data["type"],
+        payload=data["payload"]
+    )
+
+
+async def write_message(writer: asyncio.StreamWriter, payload: dict[str, Any]) -> None:
+    """Write one newline-delimited JSON message and drain the writer."""
+    writer.write((json.dumps(to_dict(payload)) + "\n").encode())
+    await writer.drain()
+
+
+async def read_message(reader: asyncio.StreamReader) -> dict[str, Any] | None:
+    """Read one newline-delimited JSON message, or None on a clean end of stream."""
+    line = await reader.readline()
+    if not line:
+        return None
+    decoded: dict[str, Any] = json.loads(line)
+    return decoded
