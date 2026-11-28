@@ -26,9 +26,8 @@ logger.setLevel(logging.DEBUG)
 # ---------------------------------------------------------------------
 RAFT_IP = "127.0.0.1"
 SERVER_IP = "127.0.0.2"
-CLIENT_IP ="127.0.0.3"
-FILENAME_HISTORY = "history.jsonl" 
-
+# CLIENT1_IP ="127.0.0.3"
+# CLIENT2_IP ="127.0.0.4"
 
 # ----------------------------------------------------------------------
 # Test data constants
@@ -50,7 +49,7 @@ CHARIZARD_MSG = {
 
 DITTO_MSG = {
     "sender": "Ditto",
-    "text": "Hello I'm Ditto. I was pushed from the server",
+    "text": "Hello I'm Ditto.",
 }
 
 EEVEE_MSG = {
@@ -63,9 +62,14 @@ FROAKIE_MSG = {
     "text": "Hello I'm Froakie",
 }
 
-CLIENT_USERNAME = CHARIZARD_MSG["sender"]
-CLIENT_MSG = CHARIZARD_MSG
+CLIENT1_USERNAME = CHARIZARD_MSG["sender"]
+CLIENT1_MSG = CHARIZARD_MSG
 
+CLIENT2_USERNAME = DITTO_MSG["sender"]
+CLIENT2_MSG = DITTO_MSG
+
+FILENAME_HISTORY_CLIENT1 = "history_CLIENT1.jsonl" 
+FILENAME_HISTORY_CLIENT2 = "history_CLIENT2.jsonl" 
 
 # ----------------------------------------------------------------------
 # Helper classes
@@ -207,7 +211,7 @@ async def _join_client(
     await client.send(
         {
             "type": "JOIN",
-            "sender": CLIENT_USERNAME,
+            "sender": CLIENT1_USERNAME,
             "payload": {},
         }
     )
@@ -239,7 +243,7 @@ async def _init_server_test_env() -> tuple[FakeRaftNode, ChatServer, FakeClient]
     
     assert server.server is not None
     server_port = (server.server.sockets[0].getsockname()[1])
-    client = FakeClient(SERVER_IP, server_port, CLIENT_USERNAME)
+    client = FakeClient(SERVER_IP, server_port, CLIENT1_USERNAME)
 
     await client.connect()
     
@@ -266,7 +270,7 @@ async def init_client_test_env() -> tuple[FakeRaftNode, ChatServer, ChatClient]:
         
     assert server.server is not None
     server_port = (server.server.sockets[0].getsockname()[1])
-    client = ChatClient(SERVER_IP, server_port, CLIENT_USERNAME, FILENAME_HISTORY)
+    client = ChatClient(SERVER_IP, server_port, CLIENT1_USERNAME, FILENAME_HISTORY_CLIENT1)
 
     connect_task = asyncio.create_task(
         client.connect()
@@ -308,7 +312,7 @@ async def test_cs_client_join() -> None:
     await client.send(
         {
             "type": "JOIN",
-            "sender": CLIENT_USERNAME,
+            "sender": CLIENT1_USERNAME,
             "payload": {},
         }
     )
@@ -380,9 +384,9 @@ async def test_cs_client_submit_message_success() -> None:
     await client.send(
         {
             "type": "SEND_MESSAGE",
-            "sender": CLIENT_USERNAME,
+            "sender": CLIENT1_USERNAME,
             "payload": {
-                "text": CLIENT_MSG["text"]
+                "text": CLIENT1_MSG["text"]
             },
         }
     )
@@ -397,11 +401,11 @@ async def test_cs_client_submit_message_success() -> None:
     assert proposal_request["payload"]["type"] == "POST_MESSAGE"
     assert (
         proposal_request["payload"]["payload"]["text"]
-        == CLIENT_MSG["text"]
+        == CLIENT1_MSG["text"]
     )
     assert (
         proposal_request["payload"]["payload"]["sender"]
-        == CLIENT_MSG["sender"]
+        == CLIENT1_MSG["sender"]
     )
 
     # Raft accepts the proposal
@@ -434,9 +438,9 @@ async def test_cs_client_submit_message_fail() -> None:
     await client.send(
         {
             "type": "SEND_MESSAGE",
-            "sender": CLIENT_USERNAME,
+            "sender": CLIENT1_USERNAME,
             "payload": {
-                "text": CLIENT_MSG["text"]
+                "text": CLIENT1_MSG["text"]
             },
         }
     )
@@ -450,7 +454,7 @@ async def test_cs_client_submit_message_fail() -> None:
     assert proposal_request["type"] == "PROPOSE_REQUEST"
     assert (
         proposal_request["payload"]["payload"]["text"]
-        == CLIENT_MSG["text"]
+        == CLIENT1_MSG["text"]
     )
 
     # Raft rejects proposal
@@ -479,7 +483,7 @@ async def test_integrate_client_join() -> None:
     node. Client begins with empty chat history
     """
     # Ensure no history file before the test
-    history_path = Path("client") / FILENAME_HISTORY
+    history_path = Path("client") / FILENAME_HISTORY_CLIENT1
     history_path.unlink(missing_ok=True)
 
     raft_node = FakeRaftNode(RAFT_IP)
@@ -495,7 +499,7 @@ async def test_integrate_client_join() -> None:
         
         assert server.server is not None
         server_port = server.server.sockets[0].getsockname()[1]
-        client = ChatClient(SERVER_IP, server_port, CLIENT_USERNAME, FILENAME_HISTORY)
+        client = ChatClient(SERVER_IP, server_port, CLIENT1_USERNAME, FILENAME_HISTORY_CLIENT1)
 
         # connect() will block waiting for JOIN_REPLY
         connect_task = asyncio.create_task(client.connect())
@@ -564,8 +568,8 @@ async def test_integrate_client_submit_message_accepted() -> None:
     try:
         # Submit a message
         client_message = ChatMessage(
-            sender=CLIENT_USERNAME,
-            text=CLIENT_MSG["text"],
+            sender=CLIENT1_USERNAME,
+            text=CLIENT1_MSG["text"],
             log_index = None # Client doesn't know the final log_index             
         )
         
@@ -579,8 +583,8 @@ async def test_integrate_client_submit_message_accepted() -> None:
         proposal = raft_node.received_messages[-1]
         
         assert proposal["type"] == "PROPOSE_REQUEST" 
-        assert proposal["payload"]["payload"]["sender"] == CLIENT_USERNAME
-        assert proposal["payload"]["payload"]["text"] == CLIENT_MSG["text"]
+        assert proposal["payload"]["payload"]["sender"] == CLIENT1_USERNAME
+        assert proposal["payload"]["payload"]["text"] == CLIENT1_MSG["text"]
 
         # Simulate Raft accepting the proposal
         await raft_node.send_proposal_result(
@@ -598,8 +602,8 @@ async def test_integrate_client_submit_message_accepted() -> None:
                 "command": {
                     "type": "POST_MESSAGE",
                     "payload": {
-                        "sender": CLIENT_MSG["sender"],
-                        "text": CLIENT_MSG["text"]
+                        "sender": CLIENT1_MSG["sender"],
+                        "text": CLIENT1_MSG["text"]
                     },
                 },
             }
@@ -609,7 +613,7 @@ async def test_integrate_client_submit_message_accepted() -> None:
         await asyncio.sleep(0.1)
 
         # Verify history file updated
-        with open(Path("client") / FILENAME_HISTORY, encoding="utf-8") as file:
+        with open(Path("client") / FILENAME_HISTORY_CLIENT1, encoding="utf-8") as file:
             history = [json.loads(line) for line in file]
 
         assert len(history) == 3
@@ -617,7 +621,7 @@ async def test_integrate_client_submit_message_accepted() -> None:
         assert [(m["sender"], m["text"]) for m in history] == [
             (ARCEUS_MSG["sender"], ARCEUS_MSG["text"]),
             (BULBASAUR_MSG["sender"], BULBASAUR_MSG["text"]),
-            (CLIENT_MSG["sender"], CLIENT_MSG["text"]),
+            (CLIENT1_MSG["sender"], CLIENT1_MSG["text"]),
         ]
 
     finally:
@@ -649,7 +653,7 @@ async def test_integrate_client_submit_message_rejected() -> None:
         send_task = asyncio.create_task(
             client.send_message(
                 ChatMessage(
-                    sender=CLIENT_USERNAME,
+                    sender=CLIENT1_USERNAME,
                     text=submitted_text,
                     log_index=None,
                 )
@@ -663,7 +667,7 @@ async def test_integrate_client_submit_message_rejected() -> None:
         proposal = raft_node.received_messages[-1]
 
         assert proposal["type"] == "PROPOSE_REQUEST"
-        assert proposal["payload"]["payload"]["sender"] == CLIENT_USERNAME
+        assert proposal["payload"]["payload"]["sender"] == CLIENT1_USERNAME
         assert proposal["payload"]["payload"]["text"] == submitted_text
 
         # Simulate Raft rejecting the proposal.
@@ -679,7 +683,7 @@ async def test_integrate_client_submit_message_rejected() -> None:
         await asyncio.sleep(0.1)
 
         # Verify history file was NOT modified.
-        with open(Path("client") / FILENAME_HISTORY, encoding="utf-8") as file:
+        with open(Path("client") / FILENAME_HISTORY_CLIENT1, encoding="utf-8") as file:
             history = [json.loads(line) for line in file]
 
         assert len(history) == 3
@@ -687,7 +691,7 @@ async def test_integrate_client_submit_message_rejected() -> None:
         assert [(m["sender"], m["text"]) for m in history] == [
             (ARCEUS_MSG["sender"], ARCEUS_MSG["text"]),
             (BULBASAUR_MSG["sender"], BULBASAUR_MSG["text"]),
-            (CLIENT_MSG["sender"], CLIENT_MSG["text"]),
+            (CLIENT1_MSG["sender"], CLIENT1_MSG["text"]),
         ]
 
     finally:
@@ -730,7 +734,7 @@ async def test_integrate_client_server_push() -> None:
         await asyncio.sleep(0.1)
 
         # Verify history file was updated.
-        with open(Path("client") / FILENAME_HISTORY, encoding="utf-8") as file:
+        with open(Path("client") / FILENAME_HISTORY_CLIENT1, encoding="utf-8") as file:
             history = [json.loads(line) for line in file]
 
         assert len(history) == 4
@@ -744,7 +748,7 @@ async def test_integrate_client_server_push() -> None:
         assert [(m["sender"], m["text"]) for m in history] == [
             (ARCEUS_MSG["sender"], ARCEUS_MSG["text"]),
             (BULBASAUR_MSG["sender"], BULBASAUR_MSG["text"]),
-            (CLIENT_MSG["sender"], CLIENT_MSG["text"]),
+            (CLIENT1_MSG["sender"], CLIENT1_MSG["text"]),
             (DITTO_MSG["sender"], DITTO_MSG["text"]),
         ]
 
@@ -806,8 +810,8 @@ async def test_integrate_client_rejoin() -> None:
         client = ChatClient(
             SERVER_IP,
             server.server.sockets[0].getsockname()[1],
-            CLIENT_USERNAME,
-            FILENAME_HISTORY,
+            CLIENT1_USERNAME,
+            FILENAME_HISTORY_CLIENT1,
         )
 
         # Reconnect. This should trigger HISTORY_REQUEST.
@@ -828,7 +832,7 @@ async def test_integrate_client_rejoin() -> None:
                 "entries": [
                     _history_entry(1, sender=ARCEUS_MSG["sender"], text=ARCEUS_MSG["text"]),
                     _history_entry(2, sender=BULBASAUR_MSG["sender"], text=BULBASAUR_MSG["text"]),
-                    _history_entry(3, sender=CLIENT_MSG["sender"], text=CLIENT_MSG["text"]),
+                    _history_entry(3, sender=CLIENT1_MSG["sender"], text=CLIENT1_MSG["text"]),
                     _history_entry(4, sender=DITTO_MSG["sender"], text=DITTO_MSG["text"]),
                     _history_entry(
                         5, sender=EEVEE_MSG["sender"], text=EEVEE_MSG["text"], term=2
@@ -843,7 +847,7 @@ async def test_integrate_client_rejoin() -> None:
         await connect_task
 
         # Verify history was updated with missed messages.
-        history_path = Path("client") / FILENAME_HISTORY
+        history_path = Path("client") / FILENAME_HISTORY_CLIENT1
 
         with history_path.open(encoding="utf-8") as file:
             history = [json.loads(line) for line in file]
@@ -853,7 +857,7 @@ async def test_integrate_client_rejoin() -> None:
         assert [(m["sender"], m["text"]) for m in history] == [
             (ARCEUS_MSG["sender"], ARCEUS_MSG["text"]),
             (BULBASAUR_MSG["sender"], BULBASAUR_MSG["text"]),
-            (CLIENT_MSG["sender"], CLIENT_MSG["text"]),
+            (CLIENT1_MSG["sender"], CLIENT1_MSG["text"]),
             (DITTO_MSG["sender"], DITTO_MSG["text"]),
             (EEVEE_MSG["sender"], EEVEE_MSG["text"]),
             (FROAKIE_MSG["sender"], FROAKIE_MSG["text"]),
@@ -862,4 +866,155 @@ async def test_integrate_client_rejoin() -> None:
     finally:
         await client.close()
         await server.stop()
+        await raft_node.stop()
+        
+        
+        
+
+@pytest.mark.asyncio
+async def test_integrate_two_clients() -> None:
+    """
+    Test that two clients can join the group chat and request history. One client submits a chat 
+    message which the raft node commits. 
+    
+    Expected outcome:
+    - Both clients receive the committed message.
+    - Both clients append the committed message to their local history.
+    """
+    
+    Path("client", FILENAME_HISTORY_CLIENT1).unlink(missing_ok=True)
+    Path("client", FILENAME_HISTORY_CLIENT2).unlink(missing_ok=True)
+
+    raft_node = FakeRaftNode(RAFT_IP)
+    raft_port = await raft_node.start()
+
+    raft_client = RaftClient(RAFT_IP, raft_port)
+
+    server = ChatServer(SERVER_IP, 0, raft_client)
+
+    client1 = None
+    client2 = None
+
+    try:
+        await server.start_chat_server()
+        await raft_node.client_connected.wait()
+
+        assert server.server is not None
+        server_port = server.server.sockets[0].getsockname()[1]
+
+        client1 = ChatClient(SERVER_IP, server_port, CLIENT1_USERNAME, FILENAME_HISTORY_CLIENT1)
+        client2 = ChatClient(SERVER_IP, server_port, CLIENT2_USERNAME, FILENAME_HISTORY_CLIENT2)
+
+        # Client 1 joins
+        connect_task1 = asyncio.create_task(client1.connect())
+
+        while not raft_node.received_messages:
+            await asyncio.sleep(0.01)
+
+        assert raft_node.received_messages[-1]["type"] == "HISTORY_REQUEST"
+
+        await raft_node.send_history_reply(
+            {
+                "entries": [
+                    _history_entry(1, sender=ARCEUS_MSG["sender"], text=ARCEUS_MSG["text"]),
+                    _history_entry(2, sender=BULBASAUR_MSG["sender"], text=BULBASAUR_MSG["text"]),
+                ]
+            }
+        )
+
+        await connect_task1
+
+        # Client 2 joins
+        received_count = len(raft_node.received_messages)
+
+        connect_task2 = asyncio.create_task(client2.connect())
+
+        while len(raft_node.received_messages) == received_count:
+            await asyncio.sleep(0.01)
+
+        assert raft_node.received_messages[-1]["type"] == "HISTORY_REQUEST"
+
+        await raft_node.send_history_reply(
+            {
+                "entries": [
+                    _history_entry(1, sender=ARCEUS_MSG["sender"], text=ARCEUS_MSG["text"]),
+                    _history_entry(2, sender=BULBASAUR_MSG["sender"], text=BULBASAUR_MSG["text"]),
+                ]
+            }
+        )
+
+        await connect_task2
+
+        # Client 1 submits a message
+        submitted_text = CLIENT1_MSG["text"]
+
+        previous_count = len(raft_node.received_messages)
+
+        send_task = asyncio.create_task(
+            client1.send_message(
+                ChatMessage(
+                    sender=CLIENT1_USERNAME,
+                    text=submitted_text,
+                    log_index=None,
+                )
+            )
+        )
+
+        while len(raft_node.received_messages) == previous_count:
+            await asyncio.sleep(0.01)
+
+        proposal = raft_node.received_messages[-1]
+
+        assert proposal["type"] == "PROPOSE_REQUEST"
+
+        await raft_node.send_proposal_result(accepted=True)
+
+        await send_task
+
+        # Raft commits the message
+        await raft_node.send_committed_entry(
+            {
+                "index": 3,
+                "term": 1,
+                "command": {
+                    "type": "POST_MESSAGE",
+                    "payload": {
+                        "sender": CLIENT1_USERNAME,
+                        "text": submitted_text,
+                    },
+                },
+            }
+        )
+
+        # Allow both listeners to process push notification
+        await asyncio.sleep(0.1)
+
+        # Verify Client 1 history
+        with open(Path("client") / FILENAME_HISTORY_CLIENT1, encoding="utf-8") as file:
+            history1 = [json.loads(line) for line in file]
+
+        # Verify Client 2 history
+        with open(Path("client") / FILENAME_HISTORY_CLIENT2, encoding="utf-8") as file:
+            history2 = [json.loads(line) for line in file]
+
+        expected = [
+                    (ARCEUS_MSG["sender"], ARCEUS_MSG["text"]),
+                    (BULBASAUR_MSG["sender"], BULBASAUR_MSG["text"]),
+                    (CLIENT1_MSG["sender"], CLIENT1_MSG["text"]),
+                ]
+    
+        
+        assert [(m["sender"], m["text"]) for m in history1] == expected
+        assert [(m["sender"], m["text"]) for m in history2] == expected
+
+
+    finally:
+        if client1 is not None:
+            await client1.close()
+
+        if client2 is not None:
+            await client2.close()
+
+        await server.stop()
+        await raft_client.close()
         await raft_node.stop()
