@@ -228,6 +228,8 @@ class ChatServer:
         Use serialization.read_message, then handle_client_message.
         """
         peer = writer.get_extra_info("peername")
+        raw_client_id: str | None = None
+        
         try:
             while True:
                 message = await csmessage.read_message(reader)

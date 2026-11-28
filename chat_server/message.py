@@ -28,7 +28,7 @@ class ChatMessage:
 
     sender: str
     text: str
-    log_index: int
+    log_index: int | None = None # None used by client because raft leader issues the log_index
 
 
 class ClientMessageType(Enum):
@@ -101,7 +101,7 @@ def to_command(client_message: ClientMessage) -> Command:
     in the payload. Called by ChatServer.handle_client_message.
     """
     return Command(
-        type=CommandType.POST_MESSAGE,
+        type=CommandType.POST_MESSAGE.value,
         payload={
             "sender": client_message.sender,
             "text": client_message.payload["text"],
@@ -125,7 +125,7 @@ def from_command(command: Command, log_index: int) -> ChatMessage:
 def encode_client_message(message: ClientMessage) -> dict[str, Any]:
     """Convert a ClientMessage into a JSON-serializable dictionary."""
     return {
-        "type": message.type,
+        "type": message.type.value,
         "sender": message.sender,
         "payload": message.payload
     }
@@ -143,7 +143,7 @@ def decode_client_message(data: dict[str, Any]) -> ClientMessage:
 def encode_server_message(message: ServerMessage) -> dict[str, Any]:
     """Convert a ServerMessage into a JSON-serializable dictionary."""
     return {
-        "type": message.type,
+        "type": message.type.value,
         "payload": message.payload
     }
 
@@ -151,7 +151,7 @@ def encode_server_message(message: ServerMessage) -> dict[str, Any]:
 def decode_server_message(data: dict[str, Any]) -> ServerMessage:
     """Rebuild a ServerMessage from a dictionary produced by encode_server_message."""
     return ServerMessage(
-        type=data["type"],
+        type=ServerMessageType(data["type"]),
         payload=data["payload"]
     )
 

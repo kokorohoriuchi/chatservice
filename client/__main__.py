@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 
+from chat_server.message import ChatMessage
 from client.client import ChatClient
 
 
@@ -18,23 +19,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", required=True, help="Chat server host.")
     parser.add_argument("--port", required=True, type=int, help="Chat server port.")
     parser.add_argument("--username", required=True, help="Name to join under.")
+    parser.add_argument("--filename", required=True, help="Name of chat history jsonl file.")
+    
     return parser.parse_args()
 
 
 async def main() -> None:
     """Connect, then read from standard input until the user quits."""
     args = parse_args()
-    client = ChatClient(args.host, args.port, args.username)
+    client = ChatClient(args.host, args.port, args.username, args.filename)
     await client.connect()
 
-    client.listen_task = asyncio.create_task(client.listen())
     try:
         while True:
             line = await asyncio.to_thread(input, "")
             if line.strip() in {"/quit", "/exit"}:
                 break
             if line.strip():
-                await client.send_message(line)
+                await client.send_message(
+                    ChatMessage(sender=args.username, text=line, log_index=None)
+                )
     except (EOFError, KeyboardInterrupt):
         pass
     finally:

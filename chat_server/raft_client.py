@@ -175,7 +175,7 @@ class RaftClient:
         logger.debug("Cancelling listen_task, closing connection to raft node %s:%s", 
             self.host, self.port)
         
-        if self.listen_task is not None:
+        if (self.listen_task is not None) and (asyncio.current_task() is not self.listen_task):
             self.listen_task.cancel()
             try:
                 await self.listen_task
@@ -200,15 +200,19 @@ class RaftClient:
         (serialization.proposal_result_from_dict, serialization.entry_from_dict,
         serialization.history_reply_from_dict)
         """
+        
+        if self.reader is None:
+            raise RuntimeError("RaftClient listener started before connection established")
+                    
         logger.info("Listening to raft node %s:%s", self.host, self.port)
-                   
+        
         try:
             while True:
                 message = await serialization.read_message(self.reader)
                 
                 if message is None:
-                    logger.warning("received malformed raft node message %r", message)
-                    continue 
+                    logger.warning("received no raft node message %r", message)
+                    break 
                         
                 raw_type = message.get("type")
                 payload = message.get("payload")
